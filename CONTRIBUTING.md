@@ -56,6 +56,12 @@ npm test
 
 # Build production bundle
 npm run build
+
+# Validate artifact integrity and manifest schema
+npm run validate:artifacts
+
+# Test complete packaging bundle
+npm run package
 ```
 
 #### Guidelines:

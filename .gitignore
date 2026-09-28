@@ -1,6 +1,9 @@
 node_modules/
 dist/
 build/
+release/
+apps/*/dist/
+packages/*/dist/
 .tmp/
 temp/
 logs/
@@ -13,3 +16,4 @@ ffmpeg/bin/
 *.mp4
 .DS_Store
 Thumbs.db
+

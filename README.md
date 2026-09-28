@@ -260,9 +260,21 @@ npm run build
 # Build extension with hot reload in dev server
 npm run dev
 
-# Package production bundle
+# Validate artifact integrity and manifest schema
+npm run validate:artifacts
+
+# Package production bundle and generate SHA-256 checksums
 npm run package
 ```
+
+### Continuous Integration & Release Automation
+
+Every commit pushed to `main` and all Pull Requests are automatically verified by GitHub Actions:
+
+* **CI (`.github/workflows/ci.yml`)**: Compiles all packages in strict TypeScript, runs linting, executes Vitest unit/integration suites, builds production bundles, performs artifact schema validation, runs security audits, and packages preview artifacts.
+* **Windows Build (`.github/workflows/windows-build.yml`)**: Runs matrix tests on `windows-latest` to validate native path handling and packaging.
+* **Automated Releases (`.github/workflows/release.yml`)**: Tagging a release (`git tag v0.1.0 && git push origin v0.1.0`) triggers an automated build that verifies version parity across `package.json` and `manifest.json`, builds verified zip bundles, calculates cryptographic SHA-256 checksums, and attaches assets to a GitHub Release.
+
 
 ---
 

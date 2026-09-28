@@ -1,22 +1,35 @@
-name: CI
+name: Windows Build & Validation
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'apps/native-host/**'
+      - 'packages/protocol/**'
+      - 'scripts/**'
+      - 'installer/**'
+      - '.github/workflows/windows-build.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'apps/native-host/**'
+      - 'packages/protocol/**'
+      - 'scripts/**'
+      - 'installer/**'
+      - '.github/workflows/windows-build.yml'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Typecheck, Lint, Test & Build
-    runs-on: ubuntu-latest
+  windows-matrix:
+    name: Windows Native Host & Build Validation
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -34,29 +47,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Lint
-        run: npm run lint
-
       - name: Run Tests
         run: npm test
 
-      - name: Build Extension & Packages
+      - name: Build All Workspaces
         run: npm run build
 
-      - name: Validate Artifacts & Manifest
+      - name: Validate Build Artifacts
         run: npm run validate:artifacts
 
-      - name: Security Audit (High/Critical)
-        run: npm audit --audit-level=high
-
-      - name: Package Extension
+      - name: Test Windows Packaging
         run: node scripts/package-extension.mjs
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenrecorder-extension-preview
-          path: |
-            release/*.zip
-            release/SHA256SUMS.txt
-          retention-days: 14

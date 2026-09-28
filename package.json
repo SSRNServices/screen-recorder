@@ -9,12 +9,14 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=apps/extension",
-    "build": "npm run build --workspaces --if-present",
-    "build:extension": "npm run build --workspace=apps/extension",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "package": "npm run build && node -e \"console.log('Extension package ready at apps/extension/dist')\""
+    "build:protocol": "npm --workspace=@screenrecorder/protocol run build",
+    "build": "npm run build:protocol && npm run build --workspaces --if-present",
+    "build:extension": "npm run build:protocol && npm run build --workspace=apps/extension",
+    "typecheck": "npm run build:protocol && npm run typecheck --workspaces --if-present",
+    "lint": "npm run build:protocol && npm run lint --workspaces --if-present",
+    "test": "npm run build:protocol && npm run test --workspaces --if-present",
+    "validate:artifacts": "node scripts/verify-artifacts.mjs",
+    "package": "npm run build && node scripts/verify-artifacts.mjs && node scripts/package-extension.mjs"
   },
   "keywords": [
     "screen-recorder",
