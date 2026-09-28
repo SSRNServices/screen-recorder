@@ -3,12 +3,14 @@ import type {
   RecordingError,
   RecordingState,
   RecordingStatusSnapshot,
-  CompletedRecordingMeta
+  CompletedRecordingMeta,
+  RecordingInfo
 } from '@screenrecorder/protocol';
 import { isValidTransition } from '@screenrecorder/protocol';
-import { getSupportedMimeType } from './mimeDetector.js';
+import { getBestSupportedMimeType } from './mimeDetector.js';
 import { RecordingTimer } from './timer.js';
 import { generateRecordingFilename } from '../utils/generateFilename.js';
+import { calculateRecordingSettings } from './qualityCalculator.js';
 
 export type StatusUpdateCallback = (snapshot: RecordingStatusSnapshot) => void;
 
@@ -17,7 +19,10 @@ export class RecordingController {
   private config: RecordingConfig = {
     source: 'screen',
     includeMic: false,
-    includeSystemAudio: false
+    includeSystemAudio: true,
+    quality: 'high',
+    fps: 'auto',
+    resolution: 'source'
   };
   private mediaStream: MediaStream | null = null;
   private micStream: MediaStream | null = null;
@@ -27,6 +32,7 @@ export class RecordingController {
   private timer: RecordingTimer = new RecordingTimer();
   private error: RecordingError | null = null;
   private lastRecording: CompletedRecordingMeta | null = null;
+  private recordingInfo: RecordingInfo | null = null;
   private listeners: Set<StatusUpdateCallback> = new Set();
   private selectedMimeType = '';
 
@@ -51,6 +57,7 @@ export class RecordingController {
       pausedTime: timerState.pausedTime,
       totalPausedDuration: timerState.totalPausedDuration,
       config: { ...this.config },
+      recordingInfo: this.recordingInfo ? { ...this.recordingInfo } : null,
       error: this.error ? { ...this.error } : null,
       lastRecording: this.lastRecording ? { ...this.lastRecording } : null
     };
@@ -99,10 +106,10 @@ export class RecordingController {
         const data = await chrome.storage.session.get('recording_snapshot');
         if (data.recording_snapshot) {
           const snapshot = data.recording_snapshot as RecordingStatusSnapshot;
-          // If extension was reloaded while active, restore non-stream state
           if (snapshot.state === 'RECORDING' || snapshot.state === 'PAUSED') {
             this.state = snapshot.state;
             this.config = snapshot.config;
+            this.recordingInfo = snapshot.recordingInfo;
             this.timer.restore({
               startTime: snapshot.startTime,
               pausedTime: snapshot.pausedTime,
@@ -113,6 +120,7 @@ export class RecordingController {
             this.notify();
           } else if (snapshot.lastRecording) {
             this.lastRecording = snapshot.lastRecording;
+            this.recordingInfo = snapshot.recordingInfo;
             this.state = snapshot.state;
             this.notify();
           }
@@ -133,10 +141,11 @@ export class RecordingController {
     this.transitionTo('STARTING');
 
     try {
-      // 1. Determine display capture constraints based on source
+      // 1. Determine capture constraints based on source and desired FPS
+      const targetIdealFps = config.fps === 30 ? 30 : 60;
       const displayConstraints: DisplayMediaStreamOptions = {
         video: {
-          frameRate: { ideal: config.frameRate || 30 }
+          frameRate: { ideal: targetIdealFps, max: targetIdealFps }
         },
         audio: config.includeSystemAudio
       };
@@ -166,7 +175,36 @@ export class RecordingController {
         };
       }
 
-      // 3. Audio handling: system audio + microphone mixing if enabled
+      // 3. Inspect actual source track settings
+      const settings = videoTrack.getSettings ? videoTrack.getSettings() : {};
+      const sourceWidth = settings.width || 1920;
+      const sourceHeight = settings.height || 1080;
+      const sourceFps = settings.frameRate || targetIdealFps;
+      const displaySurface = settings.displaySurface;
+
+      // 4. Calculate quality settings, dynamic bitrate, and resolution
+      const calculated = calculateRecordingSettings({
+        sourceWidth,
+        sourceHeight,
+        sourceFps,
+        qualityProfile: config.quality || 'high',
+        fpsOption: config.fps || 'auto',
+        resolutionOption: config.resolution || 'source'
+      });
+
+      // Apply resolution downscale constraint only if requested and supported
+      if ((calculated.targetWidth < sourceWidth || calculated.targetHeight < sourceHeight) && videoTrack.applyConstraints) {
+        try {
+          await videoTrack.applyConstraints({
+            width: { ideal: calculated.targetWidth },
+            height: { ideal: calculated.targetHeight }
+          });
+        } catch (constraintErr) {
+          console.warn('[RecordingController] Could not apply downscale constraint, using source resolution directly:', constraintErr);
+        }
+      }
+
+      // 5. Audio handling: system audio + microphone mixing if enabled
       let finalAudioTrack: MediaStreamTrack | null = null;
       const systemAudioTracks = screenStream.getAudioTracks();
       const hasSystemAudio = systemAudioTracks.length > 0;
@@ -201,7 +239,6 @@ export class RecordingController {
           }
         } catch (micErr) {
           console.warn('[RecordingController] Microphone access denied or unavailable:', micErr);
-          // Fallback to system audio if mic request was denied
           if (hasSystemAudio) {
             finalAudioTrack = systemAudioTracks[0];
           }
@@ -210,25 +247,53 @@ export class RecordingController {
         finalAudioTrack = systemAudioTracks[0];
       }
 
-      // 4. Construct composite stream
+      // 6. Construct composite stream
       const tracksToRecord: MediaStreamTrack[] = [videoTrack];
       if (finalAudioTrack) {
         tracksToRecord.push(finalAudioTrack);
       }
       const compositeStream = new MediaStream(tracksToRecord);
 
-      // 5. Select supported MIME type
-      const mimeType = getSupportedMimeType(config.mimeType);
-      this.selectedMimeType = mimeType;
+      // 7. Select optimal supported MIME type and codec
+      const codecResult = getBestSupportedMimeType(config.mimeType, Boolean(finalAudioTrack));
+      this.selectedMimeType = codecResult.mimeType;
 
-      const recorderOptions: MediaRecorderOptions = {};
-      if (mimeType) {
-        recorderOptions.mimeType = mimeType;
+      // 8. Configure high-quality MediaRecorder
+      const recorderOptions: MediaRecorderOptions = {
+        videoBitsPerSecond: calculated.videoBitsPerSecond,
+        audioBitsPerSecond: calculated.audioBitsPerSecond
+      };
+
+      if (codecResult.mimeType) {
+        recorderOptions.mimeType = codecResult.mimeType;
       }
 
-      // 6. Initialize MediaRecorder
+      console.info('[RecordingController] Initializing MediaRecorder with high-quality options:', {
+        mimeType: codecResult.mimeType,
+        codec: codecResult.codec,
+        videoBitsPerSecond: `${(calculated.videoBitsPerSecond / 1_000_000).toFixed(1)} Mbps`,
+        audioBitsPerSecond: `${(calculated.audioBitsPerSecond / 1_000).toFixed(0)} kbps`,
+        resolution: `${calculated.targetWidth}x${calculated.targetHeight}`,
+        fps: calculated.targetFps
+      });
+
       const mediaRecorder = new MediaRecorder(compositeStream, recorderOptions);
       this.mediaRecorder = mediaRecorder;
+
+      // 9. Record actual technical info
+      this.recordingInfo = {
+        width: calculated.targetWidth,
+        height: calculated.targetHeight,
+        frameRate: calculated.targetFps,
+        mimeType: codecResult.mimeType,
+        codec: codecResult.codec,
+        videoBitsPerSecond: calculated.videoBitsPerSecond,
+        actualVideoBitsPerSecond: mediaRecorder.videoBitsPerSecond || calculated.videoBitsPerSecond,
+        audioBitsPerSecond: mediaRecorder.audioBitsPerSecond || calculated.audioBitsPerSecond,
+        displaySurface,
+        qualityProfile: config.quality || 'high',
+        lowQualityWarning: calculated.lowQualityWarning
+      };
 
       mediaRecorder.ondataavailable = (event: BlobEvent) => {
         if (event.data && event.data.size > 0) {
@@ -248,8 +313,8 @@ export class RecordingController {
         this.finalizeRecording();
       };
 
-      // 7. Start recording and timer
-      mediaRecorder.start(1000); // 1-second chunks for safety against memory spikes
+      // 10. Start recording with 1000ms timeslices for memory safety
+      mediaRecorder.start(1000);
       this.timer.start();
       this.transitionTo('RECORDING');
     } catch (err: unknown) {
@@ -339,7 +404,10 @@ export class RecordingController {
       const durationMs = this.timer.getElapsedMs();
       const filename = generateRecordingFilename(new Date(), 'webm');
 
-      // Create download URL
+      // Calculate approximate actual bitrate (bps) from size and duration
+      const durationSeconds = durationMs / 1000;
+      const calculatedBitrateBps = durationSeconds > 0 ? Math.round((blob.size * 8) / durationSeconds) : 0;
+
       const downloadUrl = URL.createObjectURL(blob);
 
       const meta: CompletedRecordingMeta = {
@@ -348,6 +416,11 @@ export class RecordingController {
         durationMs,
         sizeBytes: blob.size,
         mimeType,
+        codec: this.recordingInfo?.codec,
+        width: this.recordingInfo?.width,
+        height: this.recordingInfo?.height,
+        frameRate: this.recordingInfo?.frameRate,
+        bitrateBps: calculatedBitrateBps,
         recordedAt: new Date().toISOString()
       };
 
@@ -413,6 +486,7 @@ export class RecordingController {
     this.recordedChunks = [];
     this.error = null;
     this.lastRecording = null;
+    this.recordingInfo = null;
     this.transitionTo('IDLE');
   }
 

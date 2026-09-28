@@ -2,6 +2,7 @@ import React from 'react';
 import { Header } from '../components/Header.js';
 import { SourceSelector } from '../components/SourceSelector.js';
 import { AudioOptions } from '../components/AudioOptions.js';
+import { QualitySettings } from '../components/QualitySettings.js';
 import { TimerDisplay } from '../components/TimerDisplay.js';
 import { StatusBadge } from '../components/StatusBadge.js';
 import { ActionControls } from '../components/ActionControls.js';
@@ -35,6 +36,17 @@ export const App: React.FC = () => {
           disabled={isBusy}
         />
 
+        {/* Video Quality, FPS, and Resolution */}
+        <QualitySettings
+          quality={snapshot.config.quality}
+          fps={snapshot.config.fps}
+          resolution={snapshot.config.resolution}
+          onQualityChange={(quality) => updateConfig({ quality })}
+          onFpsChange={(fps) => updateConfig({ fps })}
+          onResolutionChange={(resolution) => updateConfig({ resolution })}
+          disabled={isBusy}
+        />
+
         {/* Audio Toggles */}
         <AudioOptions
           includeMic={snapshot.config.includeMic}
@@ -44,12 +56,13 @@ export const App: React.FC = () => {
           disabled={isBusy}
         />
 
-        {/* Elapsed Timer */}
+        {/* Elapsed Timer & Technical Specs */}
         {(isRecording || isPaused || snapshot.state === 'COMPLETED') && (
           <TimerDisplay
             elapsedMs={elapsedMs}
             isRecording={isRecording}
             isPaused={isPaused}
+            recordingInfo={snapshot.recordingInfo}
           />
         )}
 

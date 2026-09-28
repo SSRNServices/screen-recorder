@@ -63,7 +63,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
       {(state === 'STOPPING' || state === 'PROCESSING') && (
         <div className="processing-indicator">
           <div className="spinner"></div>
-          <span>Saving recording...</span>
+          <span>Finalizing high-quality stream...</span>
         </div>
       )}
 
@@ -76,14 +76,42 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
                 <span className="meta-label">File:</span>
                 <span className="meta-val">{lastRecording.filename}</span>
               </div>
+              {lastRecording.width && lastRecording.height && (
+                <div className="meta-row">
+                  <span className="meta-label">Resolution:</span>
+                  <span className="meta-val">{lastRecording.width} × {lastRecording.height}</span>
+                </div>
+              )}
+              {lastRecording.frameRate && (
+                <div className="meta-row">
+                  <span className="meta-label">Frame Rate:</span>
+                  <span className="meta-val">{lastRecording.frameRate} FPS</span>
+                </div>
+              )}
+              {lastRecording.codec && (
+                <div className="meta-row">
+                  <span className="meta-label">Codec:</span>
+                  <span className="meta-val">{lastRecording.codec}</span>
+                </div>
+              )}
               <div className="meta-row">
                 <span className="meta-label">Duration:</span>
                 <span className="meta-val">{formatDuration(lastRecording.durationMs)}</span>
               </div>
               <div className="meta-row">
                 <span className="meta-label">Size:</span>
-                <span className="meta-val">{(lastRecording.sizeBytes / (1024 * 1024)).toFixed(2)} MB</span>
+                <span className="meta-val">
+                  {lastRecording.sizeBytes >= 1024 * 1024 * 1024
+                    ? `${(lastRecording.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+                    : `${(lastRecording.sizeBytes / (1024 * 1024)).toFixed(2)} MB`}
+                </span>
               </div>
+              {lastRecording.bitrateBps && (
+                <div className="meta-row">
+                  <span className="meta-label">Bitrate:</span>
+                  <span className="meta-val">{(lastRecording.bitrateBps / 1_000_000).toFixed(1)} Mbps</span>
+                </div>
+              )}
             </div>
           )}
           <div className="button-row" style={{ marginTop: '12px' }}>

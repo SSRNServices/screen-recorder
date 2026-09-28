@@ -5,6 +5,7 @@ import type {
 } from '@screenrecorder/protocol';
 import { getRecordingStatus, startRecording, sendCommand } from '../services/messageClient.js';
 import { RecordingTimer } from '../recorder/timer.js';
+import { loadSavedSettings, saveSettings, DEFAULT_RECORDING_CONFIG } from '../services/settingsService.js';
 
 const defaultSnapshot: RecordingStatusSnapshot = {
   state: 'IDLE',
@@ -12,11 +13,8 @@ const defaultSnapshot: RecordingStatusSnapshot = {
   startTime: null,
   pausedTime: null,
   totalPausedDuration: 0,
-  config: {
-    source: 'screen',
-    includeMic: false,
-    includeSystemAudio: true
-  },
+  config: { ...DEFAULT_RECORDING_CONFIG },
+  recordingInfo: null,
   error: null,
   lastRecording: null
 };
@@ -25,11 +23,20 @@ export function useRecordingState() {
   const [snapshot, setSnapshot] = useState<RecordingStatusSnapshot>(defaultSnapshot);
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Sync snapshot
+  // Sync snapshot and saved settings
   const refreshStatus = useCallback(async () => {
-    const latest = await getRecordingStatus();
-    if (latest) {
-      setSnapshot(latest);
+    const [latestSnapshot, savedSettings] = await Promise.all([
+      getRecordingStatus(),
+      loadSavedSettings()
+    ]);
+
+    if (latestSnapshot) {
+      setSnapshot(latestSnapshot);
+    } else {
+      setSnapshot((prev) => ({
+        ...prev,
+        config: { ...prev.config, ...savedSettings }
+      }));
     }
   }, []);
 
@@ -76,10 +83,14 @@ export function useRecordingState() {
   }, [snapshot.state, snapshot.startTime, snapshot.pausedTime, snapshot.totalPausedDuration]);
 
   const updateConfig = (newConfig: Partial<RecordingConfig>) => {
-    setSnapshot((prev) => ({
-      ...prev,
-      config: { ...prev.config, ...newConfig }
-    }));
+    setSnapshot((prev) => {
+      const updatedConfig = { ...prev.config, ...newConfig };
+      saveSettings(updatedConfig).catch((err) => console.warn('Failed saving settings:', err));
+      return {
+        ...prev,
+        config: updatedConfig
+      };
+    });
   };
 
   const handleStart = async () => {
@@ -100,7 +111,11 @@ export function useRecordingState() {
 
   const handleReset = async () => {
     await sendCommand({ type: 'RESET_RECORDING' });
-    setSnapshot(defaultSnapshot);
+    const saved = await loadSavedSettings();
+    setSnapshot({
+      ...defaultSnapshot,
+      config: { ...DEFAULT_RECORDING_CONFIG, ...saved }
+    });
   };
 
   return {

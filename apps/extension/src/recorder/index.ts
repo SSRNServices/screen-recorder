@@ -86,14 +86,37 @@ function renderUI(snapshot: RecordingStatusSnapshot) {
 
   // Details section
   detailsSection.innerHTML = '';
-  if (snapshot.state === 'COMPLETED' && snapshot.lastRecording) {
+  if (snapshot.state === 'RECORDING' && snapshot.recordingInfo) {
+    const techBox = document.createElement('div');
+    techBox.className = 'info-box';
+    techBox.style.marginTop = '12px';
+    techBox.innerHTML = `
+      <strong>Live Capture Specs:</strong>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+        <span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${snapshot.recordingInfo.width}×${snapshot.recordingInfo.height}</span>
+        <span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${snapshot.recordingInfo.frameRate} FPS</span>
+        <span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${snapshot.recordingInfo.codec}</span>
+        <span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${(snapshot.recordingInfo.videoBitsPerSecond / 1_000_000).toFixed(1)} Mbps</span>
+      </div>
+      ${
+        snapshot.recordingInfo.lowQualityWarning
+          ? `<div style="color: #fbbf24; font-size: 0.75rem; margin-top: 6px;">Warning: Source resolution is under 1280x720. Video clarity is limited by source.</div>`
+          : ''
+      }
+    `;
+    detailsSection.appendChild(techBox);
+  } else if (snapshot.state === 'COMPLETED' && snapshot.lastRecording) {
     const completedBox = document.createElement('div');
     completedBox.className = 'completed-info';
     completedBox.innerHTML = `
       <h3>Recording Complete</h3>
       <p class="file-detail"><strong>File:</strong> ${snapshot.lastRecording.filename}</p>
+      ${snapshot.lastRecording.width && snapshot.lastRecording.height ? `<p class="file-detail"><strong>Resolution:</strong> ${snapshot.lastRecording.width} × ${snapshot.lastRecording.height}</p>` : ''}
+      ${snapshot.lastRecording.frameRate ? `<p class="file-detail"><strong>Frame Rate:</strong> ${snapshot.lastRecording.frameRate} FPS</p>` : ''}
+      ${snapshot.lastRecording.codec ? `<p class="file-detail"><strong>Codec:</strong> ${snapshot.lastRecording.codec}</p>` : ''}
       <p class="file-detail"><strong>Duration:</strong> ${formatDuration(snapshot.lastRecording.durationMs)}</p>
       <p class="file-detail"><strong>Size:</strong> ${(snapshot.lastRecording.sizeBytes / (1024 * 1024)).toFixed(2)} MB</p>
+      ${snapshot.lastRecording.bitrateBps ? `<p class="file-detail"><strong>Bitrate:</strong> ${(snapshot.lastRecording.bitrateBps / 1_000_000).toFixed(1)} Mbps</p>` : ''}
       <div style="margin-top: 12px;">
         <a href="${snapshot.lastRecording.downloadUrl}" download="${snapshot.lastRecording.filename}" style="color: #60a5fa; text-decoration: underline; font-size: 0.9rem;">
           Download recording file
@@ -180,10 +203,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 // Handle auto-start from URL query parameters
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('autostart') === '1') {
+  const fpsParam = urlParams.get('fps');
   const initialConfig: RecordingConfig = {
     source: (urlParams.get('source') as RecordingConfig['source']) || 'screen',
     includeMic: urlParams.get('mic') === 'true',
-    includeSystemAudio: urlParams.get('audio') !== 'false'
+    includeSystemAudio: urlParams.get('audio') !== 'false',
+    quality: (urlParams.get('quality') as RecordingConfig['quality']) || 'high',
+    fps: fpsParam === '30' ? 30 : fpsParam === '60' ? 60 : 'auto',
+    resolution: (urlParams.get('resolution') as RecordingConfig['resolution']) || 'source'
   };
   controller.startRecording(initialConfig);
 }

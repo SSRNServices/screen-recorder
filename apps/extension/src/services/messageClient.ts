@@ -44,7 +44,10 @@ export async function startRecording(config: RecordingConfig): Promise<void> {
     autostart: '1',
     source: config.source,
     mic: String(config.includeMic),
-    audio: String(config.includeSystemAudio)
+    audio: String(config.includeSystemAudio),
+    quality: config.quality || 'high',
+    fps: String(config.fps || 'auto'),
+    resolution: config.resolution || 'source'
   });
 
   const recorderUrl = chrome.runtime.getURL(`recorder.html?${queryParams.toString()}`);

@@ -16,6 +16,10 @@ export type RecordingState =
  */
 export type CaptureSource = 'tab' | 'window' | 'screen';
 
+export type QualityProfile = 'standard' | 'high' | 'ultra';
+export type FpsOption = 'auto' | 30 | 60;
+export type ResolutionOption = 'source' | '1080p' | '1440p' | '2160p';
+
 /**
  * Recording configuration requested by UI.
  */
@@ -23,8 +27,28 @@ export interface RecordingConfig {
   source: CaptureSource;
   includeMic: boolean;
   includeSystemAudio: boolean;
+  quality: QualityProfile;
+  fps: FpsOption;
+  resolution: ResolutionOption;
   mimeType?: string;
   frameRate?: number;
+}
+
+/**
+ * Technical details of the active recording session.
+ */
+export interface RecordingInfo {
+  width: number;
+  height: number;
+  frameRate: number;
+  mimeType: string;
+  codec: string;
+  videoBitsPerSecond: number;
+  actualVideoBitsPerSecond?: number;
+  audioBitsPerSecond: number;
+  displaySurface?: string;
+  qualityProfile: QualityProfile;
+  lowQualityWarning?: boolean;
 }
 
 /**
@@ -66,6 +90,11 @@ export interface CompletedRecordingMeta {
   durationMs: number;
   sizeBytes: number;
   mimeType: string;
+  codec?: string;
+  width?: number;
+  height?: number;
+  frameRate?: number;
+  bitrateBps?: number;
   recordedAt: string; // ISO string
 }
 
@@ -79,6 +108,7 @@ export interface RecordingStatusSnapshot {
   pausedTime: number | null;
   totalPausedDuration: number;
   config: RecordingConfig;
+  recordingInfo: RecordingInfo | null;
   error: RecordingError | null;
   lastRecording: CompletedRecordingMeta | null;
 }
