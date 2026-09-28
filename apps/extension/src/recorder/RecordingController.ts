@@ -136,9 +136,22 @@ export class RecordingController {
       return;
     }
 
+    console.log('[ScreenRecorder] startRecording()');
     this.config = config;
     this.recordedChunks = [];
     this.transitionTo('STARTING');
+
+    // 15-second safety timeout to prevent indefinite hanging
+    let startupTimeoutId: number | null = window.setTimeout(() => {
+      if (this.state === 'STARTING') {
+        console.error('[ScreenRecorder] ERROR: Recording initialization timed out');
+        this.cleanupStreams();
+        this.transitionTo('ERROR', {
+          code: 'CAPTURE_FAILED',
+          message: 'Recording initialization timed out.'
+        });
+      }
+    }, 15000);
 
     try {
       // 1. Determine capture constraints based on source and desired FPS
@@ -159,21 +172,53 @@ export class RecordingController {
       }
 
       // 2. Request screen capture from browser
-      const screenStream = await navigator.mediaDevices.getDisplayMedia(displayConstraints);
+      console.log('[ScreenRecorder] requesting display stream');
+      let screenStream: MediaStream;
+      try {
+        if (config.streamId) {
+          screenStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: config.streamId,
+                maxFrameRate: targetIdealFps
+              }
+            } as unknown as MediaTrackConstraints,
+            audio: config.includeSystemAudio
+              ? ({
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: config.streamId
+                  }
+                } as unknown as MediaTrackConstraints)
+              : false
+          });
+        } else {
+          screenStream = await navigator.mediaDevices.getDisplayMedia(displayConstraints);
+        }
+      } catch (displayErr) {
+        console.error('[ScreenRecorder] display capture failed:', displayErr);
+        throw displayErr;
+      }
+
       this.mediaStream = screenStream;
+      console.log('[ScreenRecorder] display stream acquired');
 
       // Handle user stopping screen share via Chrome native overlay bar
       const videoTrack = screenStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.onended = () => {
-          console.info('[RecordingController] Video track ended via browser UI.');
-          if (this.state === 'RECORDING' || this.state === 'PAUSED') {
-            this.stopRecording().catch((err) => {
-              console.error('[RecordingController] Error stopping after track ended:', err);
-            });
-          }
-        };
+      if (!videoTrack || videoTrack.readyState !== 'live') {
+        throw new Error('No live video track received from display capture.');
       }
+      console.log(`[ScreenRecorder] Video track ready: kind=${videoTrack.kind}, readyState=${videoTrack.readyState}`);
+
+      videoTrack.onended = () => {
+        console.info('[RecordingController] Video track ended via browser UI.');
+        if (this.state === 'RECORDING' || this.state === 'PAUSED') {
+          this.stopRecording().catch((err) => {
+            console.error('[RecordingController] Error stopping after track ended:', err);
+          });
+        }
+      };
 
       // 3. Inspect actual source track settings
       const settings = videoTrack.getSettings ? videoTrack.getSettings() : {};
@@ -210,6 +255,7 @@ export class RecordingController {
       const hasSystemAudio = systemAudioTracks.length > 0;
 
       if (config.includeMic) {
+        console.log('[ScreenRecorder] requesting microphone');
         try {
           const micStream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -219,11 +265,15 @@ export class RecordingController {
             }
           });
           this.micStream = micStream;
+          console.log('[ScreenRecorder] microphone acquired');
 
           if (hasSystemAudio) {
             // Mix system audio + microphone via Web Audio API
             const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
             const audioCtx = new AudioCtx();
+            if (audioCtx.state === 'suspended') {
+              await audioCtx.resume().catch(() => {});
+            }
             this.audioContext = audioCtx;
 
             const systemSource = audioCtx.createMediaStreamSource(new MediaStream([systemAudioTracks[0]]));
@@ -238,7 +288,7 @@ export class RecordingController {
             finalAudioTrack = micStream.getAudioTracks()[0];
           }
         } catch (micErr) {
-          console.warn('[RecordingController] Microphone access denied or unavailable:', micErr);
+          console.warn('[ScreenRecorder] microphone capture failed:', micErr);
           if (hasSystemAudio) {
             finalAudioTrack = systemAudioTracks[0];
           }
@@ -248,8 +298,10 @@ export class RecordingController {
       }
 
       // 6. Construct composite stream
+      console.log('[ScreenRecorder] combining streams');
       const tracksToRecord: MediaStreamTrack[] = [videoTrack];
-      if (finalAudioTrack) {
+      if (finalAudioTrack && finalAudioTrack.readyState === 'live') {
+        console.log(`[ScreenRecorder] Audio track ready: kind=${finalAudioTrack.kind}, readyState=${finalAudioTrack.readyState}`);
         tracksToRecord.push(finalAudioTrack);
       }
       const compositeStream = new MediaStream(tracksToRecord);
@@ -277,8 +329,26 @@ export class RecordingController {
         fps: calculated.targetFps
       });
 
-      const mediaRecorder = new MediaRecorder(compositeStream, recorderOptions);
+      console.log('[ScreenRecorder] creating MediaRecorder');
+      let mediaRecorder: MediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(compositeStream, recorderOptions);
+      } catch (mrErr) {
+        console.warn('[ScreenRecorder] MediaRecorder creation failed with full options, trying codec fallback:', mrErr);
+        try {
+          mediaRecorder = new MediaRecorder(compositeStream, { mimeType: codecResult.mimeType || undefined });
+        } catch (mrErr2) {
+          console.warn('[ScreenRecorder] MediaRecorder creation failed with mimeType, falling back to default:', mrErr2);
+          try {
+            mediaRecorder = new MediaRecorder(compositeStream);
+          } catch (mrErr3) {
+            console.error('[ScreenRecorder] MediaRecorder creation failed:', mrErr3);
+            throw mrErr3;
+          }
+        }
+      }
       this.mediaRecorder = mediaRecorder;
+      console.log('[ScreenRecorder] MediaRecorder created');
 
       // 9. Record actual technical info
       this.recordingInfo = {
@@ -314,15 +384,33 @@ export class RecordingController {
       };
 
       // 10. Start recording with 1000ms timeslices for memory safety
-      mediaRecorder.start(1000);
+      console.log('[ScreenRecorder] starting MediaRecorder');
+      try {
+        mediaRecorder.start(1000);
+      } catch (startErr) {
+        console.error('[ScreenRecorder] recorder start failed:', startErr);
+        throw startErr;
+      }
+
+      if (startupTimeoutId) {
+        clearTimeout(startupTimeoutId);
+        startupTimeoutId = null;
+      }
+
       this.timer.start();
       this.transitionTo('RECORDING');
+      console.log('[ScreenRecorder] recording started');
     } catch (err: unknown) {
-      console.error('[RecordingController] Failed to start recording:', err);
+      if (startupTimeoutId) {
+        clearTimeout(startupTimeoutId);
+        startupTimeoutId = null;
+      }
+
+      console.error('[ScreenRecorder] ERROR:', err);
       const errorObj = err as Error;
 
       if (errorObj.name === 'NotAllowedError') {
-        if (errorObj.message && errorObj.message.includes('Permission dismissed')) {
+        if (errorObj.message && errorObj.message.toLowerCase().includes('dismiss')) {
           this.transitionTo('ERROR', {
             code: 'RECORDING_CANCELLED',
             message: 'Recording cancelled.'
@@ -333,6 +421,11 @@ export class RecordingController {
             message: 'Screen capture permission was denied.'
           });
         }
+      } else if (errorObj.message && errorObj.message.toLowerCase().includes('cancel')) {
+        this.transitionTo('ERROR', {
+          code: 'RECORDING_CANCELLED',
+          message: 'Screen capture was cancelled.'
+        });
       } else {
         this.transitionTo('ERROR', {
           code: 'CAPTURE_FAILED',
@@ -491,6 +584,12 @@ export class RecordingController {
   }
 
   private cleanupStreams(): void {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      try {
+        this.mediaRecorder.stop();
+      } catch (_) {}
+    }
+    this.mediaRecorder = null;
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((track) => track.stop());
       this.mediaStream = null;
@@ -503,6 +602,5 @@ export class RecordingController {
       this.audioContext.close().catch((err) => console.warn('Error closing AudioContext', err));
       this.audioContext = null;
     }
-    this.mediaRecorder = null;
   }
 }

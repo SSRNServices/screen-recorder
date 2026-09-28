@@ -31,7 +31,17 @@ export function useRecordingState() {
     ]);
 
     if (latestSnapshot) {
-      setSnapshot(latestSnapshot);
+      // If extension restarted or tab was closed while STARTING, recover to IDLE
+      if (latestSnapshot.state === 'STARTING') {
+        setSnapshot({
+          ...latestSnapshot,
+          state: 'IDLE',
+          error: null,
+          config: { ...latestSnapshot.config, ...savedSettings }
+        });
+      } else {
+        setSnapshot(latestSnapshot);
+      }
     } else {
       setSnapshot((prev) => ({
         ...prev,
@@ -60,6 +70,29 @@ export function useRecordingState() {
       }
     };
   }, [refreshStatus]);
+
+  // Safety timeout: Never allow UI to remain stuck on STARTING permanently
+  useEffect(() => {
+    if (snapshot.state === 'STARTING') {
+      const timeout = setTimeout(() => {
+        setSnapshot((prev) => {
+          if (prev.state === 'STARTING') {
+            console.warn('[ScreenRecorder] Recording startup timed out in popup UI.');
+            return {
+              ...prev,
+              state: 'ERROR',
+              error: {
+                code: 'CAPTURE_FAILED',
+                message: 'Recording initialization timed out. Please try again.'
+              }
+            };
+          }
+          return prev;
+        });
+      }, 15000);
+      return () => clearTimeout(timeout);
+    }
+  }, [snapshot.state]);
 
   // Elapsed time calculation with zero-drift timer
   useEffect(() => {
@@ -94,7 +127,32 @@ export function useRecordingState() {
   };
 
   const handleStart = async () => {
-    await startRecording(snapshot.config);
+    if (snapshot.state === 'STARTING' || snapshot.state === 'RECORDING') {
+      return;
+    }
+
+    try {
+      setSnapshot((prev) => ({
+        ...prev,
+        state: 'STARTING',
+        error: null
+      }));
+      await startRecording(snapshot.config);
+    } catch (err: unknown) {
+      console.error('[ScreenRecorder] Recording startup failed:', err);
+      const errMsg = (err as Error)?.message || 'Failed to start recording.';
+      const isCancelled = errMsg.toLowerCase().includes('cancel');
+      setSnapshot((prev) => ({
+        ...prev,
+        state: isCancelled ? 'IDLE' : 'ERROR',
+        error: isCancelled
+          ? null
+          : {
+              code: isCancelled ? 'RECORDING_CANCELLED' : 'CAPTURE_FAILED',
+              message: errMsg
+            }
+      }));
+    }
   };
 
   const handleStop = async () => {

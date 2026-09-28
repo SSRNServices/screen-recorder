@@ -32,6 +32,7 @@ export interface RecordingConfig {
   resolution: ResolutionOption;
   mimeType?: string;
   frameRate?: number;
+  streamId?: string;
 }
 
 /**

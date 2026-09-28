@@ -2,6 +2,13 @@ import type { ExtensionMessage, RecordingStatusSnapshot } from '@screenrecorder/
 
 console.log('[ScreenRecorder Service Worker] Initializing...');
 
+// Enable session storage access in all extension contexts (popup, recorder tab)
+if (typeof chrome !== 'undefined' && chrome.storage?.session?.setAccessLevel) {
+  chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }).catch((err) => {
+    console.warn('[Service Worker] Failed to set session storage access level:', err);
+  });
+}
+
 // Update action badge based on state
 function updateBadge(state: string): void {
   if (typeof chrome === 'undefined' || !chrome.action) return;
@@ -38,6 +45,29 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
     return true; // async sendResponse
   }
 
+  // Forward recording lifecycle commands from popup to active recorder tab if needed
+  if (
+    message.type === 'STOP_RECORDING' ||
+    message.type === 'PAUSE_RECORDING' ||
+    message.type === 'RESUME_RECORDING' ||
+    message.type === 'RESET_RECORDING'
+  ) {
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      chrome.tabs.query({ url: chrome.runtime.getURL('recorder.html*') }).then((tabs) => {
+        for (const tab of tabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+          }
+        }
+        sendResponse({ ok: true });
+      }).catch(() => {
+        sendResponse({ ok: false });
+      });
+      return true; // async sendResponse
+    }
+  }
+
+  sendResponse({ ok: true });
   return false;
 });
 

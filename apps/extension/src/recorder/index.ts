@@ -61,6 +61,13 @@ function renderUI(snapshot: RecordingStatusSnapshot) {
 
     actionButtons.appendChild(resumeBtn);
     actionButtons.appendChild(stopBtn);
+  } else if (snapshot.state === 'STARTING') {
+    const startingMsg = document.createElement('div');
+    startingMsg.style.textAlign = 'center';
+    startingMsg.style.width = '100%';
+    startingMsg.style.color = 'var(--text-secondary)';
+    startingMsg.textContent = 'Preparing recording...';
+    actionButtons.appendChild(startingMsg);
   } else if (snapshot.state === 'STOPPING' || snapshot.state === 'PROCESSING') {
     const processingMsg = document.createElement('div');
     processingMsg.style.textAlign = 'center';
@@ -204,13 +211,15 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('autostart') === '1') {
   const fpsParam = urlParams.get('fps');
+  const streamId = urlParams.get('streamId') || undefined;
   const initialConfig: RecordingConfig = {
     source: (urlParams.get('source') as RecordingConfig['source']) || 'screen',
     includeMic: urlParams.get('mic') === 'true',
     includeSystemAudio: urlParams.get('audio') !== 'false',
     quality: (urlParams.get('quality') as RecordingConfig['quality']) || 'high',
     fps: fpsParam === '30' ? 30 : fpsParam === '60' ? 60 : 'auto',
-    resolution: (urlParams.get('resolution') as RecordingConfig['resolution']) || 'source'
+    resolution: (urlParams.get('resolution') as RecordingConfig['resolution']) || 'source',
+    streamId
   };
   controller.startRecording(initialConfig);
 }

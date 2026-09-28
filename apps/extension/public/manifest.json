@@ -13,7 +13,9 @@
   },
   "permissions": [
     "storage",
-    "downloads"
+    "downloads",
+    "tabs",
+    "desktopCapture"
   ],
   "icons": {
     "16": "icons/icon16.png",
