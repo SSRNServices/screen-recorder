@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatDuration } from '../utils/formatTime.js';
 import type { RecordingInfo } from '@screenrecorder/protocol';
+import { IconAlert } from './Icons.js';
 
 interface TimerDisplayProps {
   elapsedMs: number;
@@ -16,11 +17,22 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
   recordingInfo
 }) => {
   return (
-    <div className={`timer-container ${isRecording ? 'recording' : ''} ${isPaused ? 'paused' : ''}`}>
+    <div
+      className={`timer-container ${isRecording ? 'recording' : ''} ${isPaused ? 'paused' : ''}`}
+      role="timer"
+      aria-label="Recording duration"
+    >
+      <div className="timer-header">
+        <span className="timer-status-dot" aria-hidden="true" />
+        <span className="timer-status-text">
+          {isRecording ? 'Recording' : isPaused ? 'Paused' : 'Elapsed'}
+        </span>
+      </div>
+
       <span className="timer-value">{formatDuration(elapsedMs)}</span>
 
       {recordingInfo && (
-        <div className="technical-info-chips">
+        <div className="technical-info-chips" aria-label="Technical stream parameters">
           <span className="tech-chip">{recordingInfo.width} × {recordingInfo.height}</span>
           <span className="tech-chip">{recordingInfo.frameRate} FPS</span>
           <span className="tech-chip">{recordingInfo.codec}</span>
@@ -29,7 +41,8 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
       )}
 
       {recordingInfo?.lowQualityWarning && (
-        <div className="low-quality-warning">
+        <div className="low-quality-warning" role="note">
+          <IconAlert size={14} className="warning-icon" />
           <span>Source resolution is relatively low ({recordingInfo.width}×{recordingInfo.height}). Video clarity is limited by source.</span>
         </div>
       )}

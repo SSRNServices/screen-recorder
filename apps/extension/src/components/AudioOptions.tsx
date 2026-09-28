@@ -1,4 +1,5 @@
 import React from 'react';
+import { IconMic, IconVolume } from './Icons.js';
 
 interface AudioOptionsProps {
   includeMic: boolean;
@@ -17,27 +18,45 @@ export const AudioOptions: React.FC<AudioOptionsProps> = ({
 }) => {
   return (
     <div className="form-group">
-      <label className="section-label">Audio</label>
-      <div className="checkbox-group">
-        <label className={`checkbox-label ${disabled ? 'disabled' : ''}`}>
-          <input
-            type="checkbox"
-            checked={includeMic}
-            onChange={(e) => onMicChange(e.target.checked)}
+      <label className="section-label">Audio Sources</label>
+      <div className="toggle-list">
+        {/* Microphone Toggle */}
+        <div className={`toggle-row ${disabled ? 'disabled' : ''}`}>
+          <div className="toggle-info">
+            <span className="toggle-icon"><IconMic size={15} /></span>
+            <span className="toggle-title">Microphone</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={includeMic}
+            className={`switch ${includeMic ? 'checked' : ''}`}
+            onClick={() => !disabled && onMicChange(!includeMic)}
             disabled={disabled}
-          />
-          <span className="checkbox-text">Include microphone</span>
-        </label>
+            aria-label="Toggle microphone audio"
+          >
+            <span className="switch-thumb" />
+          </button>
+        </div>
 
-        <label className={`checkbox-label ${disabled ? 'disabled' : ''}`}>
-          <input
-            type="checkbox"
-            checked={includeSystemAudio}
-            onChange={(e) => onSystemAudioChange(e.target.checked)}
+        {/* System Audio Toggle */}
+        <div className={`toggle-row ${disabled ? 'disabled' : ''}`}>
+          <div className="toggle-info">
+            <span className="toggle-icon"><IconVolume size={15} /></span>
+            <span className="toggle-title">System / Tab Audio</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={includeSystemAudio}
+            className={`switch ${includeSystemAudio ? 'checked' : ''}`}
+            onClick={() => !disabled && onSystemAudioChange(!includeSystemAudio)}
             disabled={disabled}
-          />
-          <span className="checkbox-text">Include system audio</span>
-        </label>
+            aria-label="Toggle system and tab audio"
+          >
+            <span className="switch-thumb" />
+          </button>
+        </div>
       </div>
     </div>
   );

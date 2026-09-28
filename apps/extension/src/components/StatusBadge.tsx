@@ -1,5 +1,6 @@
 import React from 'react';
 import type { RecordingState } from '@screenrecorder/protocol';
+import { IconShield } from './Icons.js';
 
 interface StatusBadgeProps {
   state: RecordingState;
@@ -7,23 +8,27 @@ interface StatusBadgeProps {
 
 const STATE_LABELS: Record<RecordingState, string> = {
   IDLE: 'Ready',
-  STARTING: 'Starting...',
+  STARTING: 'Initializing',
   RECORDING: 'Recording',
   PAUSED: 'Paused',
-  STOPPING: 'Stopping...',
-  PROCESSING: 'Processing...',
+  STOPPING: 'Stopping',
+  PROCESSING: 'Saving',
   COMPLETED: 'Completed',
   ERROR: 'Error'
 };
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ state }) => {
   return (
-    <div className="status-badge-wrapper">
-      <span className="status-label-prefix">Status:</span>
-      <span className={`status-pill pill-${state.toLowerCase()}`}>
-        <span className="status-dot-indicator"></span>
-        {STATE_LABELS[state]}
-      </span>
+    <div className="status-footer-wrapper">
+      <div className="privacy-pill" title="All processing occurs locally in browser memory without external network calls">
+        <IconShield size={12} className="privacy-icon" />
+        <span>Local • No Upload</span>
+      </div>
+
+      <div className={`status-pill pill-${state.toLowerCase()}`} role="status">
+        <span className="status-dot-indicator" aria-hidden="true" />
+        <span className="status-text">{STATE_LABELS[state]}</span>
+      </div>
     </div>
   );
 };
