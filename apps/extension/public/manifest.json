@@ -15,7 +15,9 @@
     "storage",
     "downloads",
     "tabs",
-    "desktopCapture"
+    "desktopCapture",
+    "tabCapture",
+    "activeTab"
   ],
   "icons": {
     "16": "icons/icon16.png",

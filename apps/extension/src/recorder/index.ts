@@ -212,6 +212,14 @@ const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('autostart') === '1') {
   const fpsParam = urlParams.get('fps');
   const streamId = urlParams.get('streamId') || undefined;
+  const captureMethod = (urlParams.get('captureMethod') as 'desktop' | 'tab') || undefined;
+  const canAudioParam = urlParams.get('canAudio');
+  const canRequestAudioTrack = canAudioParam === 'true' ? true : canAudioParam === 'false' ? false : undefined;
+  const targetTabIdParam = urlParams.get('targetTabId');
+  const targetTabId = targetTabIdParam ? parseInt(targetTabIdParam, 10) : undefined;
+  const targetTabUrlParam = urlParams.get('targetTabUrl');
+  const targetTabUrl = targetTabUrlParam ? decodeURIComponent(targetTabUrlParam) : undefined;
+
   const initialConfig: RecordingConfig = {
     source: (urlParams.get('source') as RecordingConfig['source']) || 'screen',
     includeMic: urlParams.get('mic') === 'true',
@@ -219,7 +227,19 @@ if (urlParams.get('autostart') === '1') {
     quality: (urlParams.get('quality') as RecordingConfig['quality']) || 'high',
     fps: fpsParam === '30' ? 30 : fpsParam === '60' ? 60 : 'auto',
     resolution: (urlParams.get('resolution') as RecordingConfig['resolution']) || 'source',
-    streamId
+    streamId,
+    captureMethod,
+    canRequestAudioTrack,
+    targetTabId,
+    targetTabUrl
   };
+
+  // Scrub streamId from address bar so capability token is not exposed in UI/history
+  if (streamId && window.history && window.history.replaceState) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('streamId');
+    window.history.replaceState({}, document.title, cleanUrl.toString());
+  }
+
   controller.startRecording(initialConfig);
 }

@@ -140,8 +140,24 @@ export function useRecordingState() {
       await startRecording(snapshot.config);
     } catch (err: unknown) {
       console.error('[ScreenRecorder] Recording startup failed:', err);
-      const errMsg = (err as Error)?.message || 'Failed to start recording.';
+      const errorObj = err as Error & { constraint?: string };
+      console.error('[ScreenRecorder] Startup error details:', {
+        name: errorObj?.name,
+        message: errorObj?.message,
+        constraint: errorObj?.constraint,
+        source: snapshot.config.source,
+        captureMethod: snapshot.config.captureMethod
+      });
+
+      const sourceLabel = snapshot.config.source === 'window' ? 'Window' : snapshot.config.source === 'tab' ? 'Tab' : 'Screen';
+      const errMsg = errorObj?.message || `${sourceLabel} capture failed.`;
       const isCancelled = errMsg.toLowerCase().includes('cancel');
+
+      let userMsg = errMsg;
+      if (errMsg.includes('object DOMException') || errMsg.includes('Error starting tab capture')) {
+        userMsg = `${sourceLabel} capture failed.`;
+      }
+
       setSnapshot((prev) => ({
         ...prev,
         state: isCancelled ? 'IDLE' : 'ERROR',
@@ -149,7 +165,7 @@ export function useRecordingState() {
           ? null
           : {
               code: isCancelled ? 'RECORDING_CANCELLED' : 'CAPTURE_FAILED',
-              message: errMsg
+              message: userMsg
             }
       }));
     }

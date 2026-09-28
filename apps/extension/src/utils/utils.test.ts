@@ -70,3 +70,65 @@ describe('RecordingTimer', () => {
     expect(finalTime).toBe(7000);
   });
 });
+
+describe('validateTargetTab', () => {
+  it('validates standard https web tab successfully', async () => {
+    const { validateTargetTab } = await import('../services/messageClient.js');
+    const result = validateTargetTab({
+      id: 101,
+      url: 'https://example.com/dashboard'
+    } as unknown as chrome.tabs.Tab);
+
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.tabId).toBe(101);
+      expect(result.url).toBe('https://example.com/dashboard');
+    }
+  });
+
+  it('rejects undefined or missing tab', async () => {
+    const { validateTargetTab } = await import('../services/messageClient.js');
+    const result = validateTargetTab(undefined);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain('No active tab found');
+    }
+  });
+
+  it('rejects tab with missing or invalid URL', async () => {
+    const { validateTargetTab } = await import('../services/messageClient.js');
+    const result = validateTargetTab({ id: 102, url: '' } as unknown as chrome.tabs.Tab);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain('URL is not available');
+    }
+  });
+
+  it('rejects restricted chrome:// pages with clear error', async () => {
+    const { validateTargetTab } = await import('../services/messageClient.js');
+    const result = validateTargetTab({ id: 103, url: 'chrome://extensions/' } as unknown as chrome.tabs.Tab);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain('restricted browser pages (chrome://)');
+    }
+  });
+
+  it('rejects restricted chrome-extension:// pages with clear error', async () => {
+    const { validateTargetTab } = await import('../services/messageClient.js');
+    const result = validateTargetTab({ id: 104, url: 'chrome-extension://abcdef/popup.html' } as unknown as chrome.tabs.Tab);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain('restricted browser pages (chrome-extension://)');
+    }
+  });
+
+  it('rejects about:blank pages', async () => {
+    const { validateTargetTab } = await import('../services/messageClient.js');
+    const result = validateTargetTab({ id: 105, url: 'about:blank' } as unknown as chrome.tabs.Tab);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain('restricted browser pages (about:)');
+    }
+  });
+});
+

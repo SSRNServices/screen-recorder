@@ -172,40 +172,88 @@ export class RecordingController {
       }
 
       // 2. Request screen capture from browser
+      console.log('[ScreenRecorder] capture configuration:', {
+        source: config.source,
+        captureMethod: config.captureMethod || (config.source === 'tab' ? 'tab' : 'desktop'),
+        hasStreamId: Boolean(config.streamId),
+        includeSystemAudio: config.includeSystemAudio,
+        includeMic: config.includeMic,
+        targetTabId: config.targetTabId,
+        targetTabUrl: config.targetTabUrl
+      });
+
       console.log('[ScreenRecorder] requesting display stream');
       let screenStream: MediaStream;
       try {
         if (config.streamId) {
-          screenStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: config.streamId,
-                maxFrameRate: targetIdealFps
-              }
-            } as unknown as MediaTrackConstraints,
-            audio: config.includeSystemAudio
-              ? ({
+          const mediaSource = config.captureMethod === 'tab' ? 'tab' : 'desktop';
+          const shouldRequestAudio = config.includeSystemAudio && config.canRequestAudioTrack !== false;
+
+          try {
+            screenStream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                mandatory: {
+                  chromeMediaSource: mediaSource,
+                  chromeMediaSourceId: config.streamId,
+                  maxFrameRate: targetIdealFps
+                }
+              } as unknown as MediaTrackConstraints,
+              audio: shouldRequestAudio
+                ? ({
+                    mandatory: {
+                      chromeMediaSource: mediaSource,
+                      chromeMediaSourceId: config.streamId
+                    }
+                  } as unknown as MediaTrackConstraints)
+                : false
+            });
+          } catch (firstErr) {
+            if (shouldRequestAudio) {
+              console.warn('[ScreenRecorder] getUserMedia with audio failed, retrying video-only:', firstErr);
+              screenStream = await navigator.mediaDevices.getUserMedia({
+                video: {
                   mandatory: {
-                    chromeMediaSource: 'desktop',
-                    chromeMediaSourceId: config.streamId
+                    chromeMediaSource: mediaSource,
+                    chromeMediaSourceId: config.streamId,
+                    maxFrameRate: targetIdealFps
                   }
-                } as unknown as MediaTrackConstraints)
-              : false
-          });
+                } as unknown as MediaTrackConstraints,
+                audio: false
+              });
+            } else {
+              throw firstErr;
+            }
+          }
         } else {
           screenStream = await navigator.mediaDevices.getDisplayMedia(displayConstraints);
         }
       } catch (displayErr) {
-        console.error('[ScreenRecorder] display capture failed:', displayErr);
+        const domErr = displayErr as DOMException;
+        console.error('[ScreenRecorder] display capture failed:', {
+          name: domErr?.name,
+          message: domErr?.message,
+          constraint: (domErr as unknown as { constraint?: string })?.constraint,
+          source: config.source,
+          captureMethod: config.captureMethod || (config.source === 'tab' ? 'tab' : 'desktop')
+        });
         throw displayErr;
       }
 
       this.mediaStream = screenStream;
       console.log('[ScreenRecorder] display stream acquired');
 
+      // Verify acquired tracks and readiness
+      const videoTracks = screenStream.getVideoTracks();
+      const audioTracks = screenStream.getAudioTracks();
+      console.log('[ScreenRecorder] Stream tracks acquired', {
+        videoTrackCount: videoTracks.length,
+        audioTrackCount: audioTracks.length,
+        videoReadyState: videoTracks[0]?.readyState,
+        audioReadyState: audioTracks[0]?.readyState
+      });
+
       // Handle user stopping screen share via Chrome native overlay bar
-      const videoTrack = screenStream.getVideoTracks()[0];
+      const videoTrack = videoTracks[0];
       if (!videoTrack || videoTrack.readyState !== 'live') {
         throw new Error('No live video track received from display capture.');
       }
@@ -406,30 +454,47 @@ export class RecordingController {
         startupTimeoutId = null;
       }
 
-      console.error('[ScreenRecorder] ERROR:', err);
-      const errorObj = err as Error;
+      const domErr = err as DOMException;
+      const captureMethod = config.captureMethod || (config.source === 'tab' ? 'tab' : 'desktop');
+      console.error('[ScreenRecorder] ERROR:', {
+        name: domErr?.name,
+        message: domErr?.message,
+        constraint: (domErr as unknown as { constraint?: string })?.constraint,
+        source: config.source,
+        captureMethod
+      });
 
-      if (errorObj.name === 'NotAllowedError') {
-        if (errorObj.message && errorObj.message.toLowerCase().includes('dismiss')) {
+      const sourceLabel = config.source === 'window' ? 'Window' : config.source === 'tab' ? 'Tab' : 'Screen';
+
+      if (domErr?.name === 'NotAllowedError') {
+        if (domErr.message && domErr.message.toLowerCase().includes('dismiss')) {
           this.transitionTo('ERROR', {
             code: 'RECORDING_CANCELLED',
-            message: 'Recording cancelled.'
+            message: `${sourceLabel} capture was cancelled.`
           });
         } else {
           this.transitionTo('ERROR', {
             code: 'PERMISSION_DENIED',
-            message: 'Screen capture permission was denied.'
+            message: `${sourceLabel} capture permission was denied.`
           });
         }
-      } else if (errorObj.message && errorObj.message.toLowerCase().includes('cancel')) {
+      } else if (domErr?.message && domErr.message.toLowerCase().includes('cancel')) {
         this.transitionTo('ERROR', {
           code: 'RECORDING_CANCELLED',
-          message: 'Screen capture was cancelled.'
+          message: `${sourceLabel} capture was cancelled.`
         });
       } else {
+        let userMessage = `${sourceLabel} capture failed.`;
+        if (
+          domErr?.message &&
+          !domErr.message.includes('object DOMException') &&
+          !domErr.message.includes('Error starting tab capture')
+        ) {
+          userMessage = domErr.message;
+        }
         this.transitionTo('ERROR', {
           code: 'CAPTURE_FAILED',
-          message: errorObj.message || 'Failed to capture screen stream.'
+          message: userMessage
         });
       }
       this.cleanupStreams();

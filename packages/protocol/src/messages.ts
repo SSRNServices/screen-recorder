@@ -33,6 +33,10 @@ export interface RecordingConfig {
   mimeType?: string;
   frameRate?: number;
   streamId?: string;
+  captureMethod?: 'desktop' | 'tab';
+  canRequestAudioTrack?: boolean;
+  targetTabId?: number;
+  targetTabUrl?: string;
 }
 
 /**
