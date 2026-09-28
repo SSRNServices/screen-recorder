@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.tmp/
+temp/
+logs/
+*.log
+.env
+.env.*
+recordings/
+ffmpeg/bin/
+*.webm
+*.mp4
+.DS_Store
+Thumbs.db

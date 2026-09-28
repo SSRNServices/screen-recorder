@@ -1,0 +1,17 @@
+{
+  "name": "@screenrecorder/protocol",
+  "version": "0.1.0",
+  "description": "Shared communication protocol and types for ScreenRecorder",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

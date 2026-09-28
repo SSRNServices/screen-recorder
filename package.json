@@ -1,0 +1,29 @@
+{
+  "name": "screenrecorder-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ScreenRecorder - Browser Extension with Native FFmpeg Processing",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/extension",
+    "build": "npm run build --workspaces --if-present",
+    "build:extension": "npm run build --workspace=apps/extension",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "package": "npm run build && node -e \"console.log('Extension package ready at apps/extension/dist')\""
+  },
+  "keywords": [
+    "screen-recorder",
+    "browser-extension",
+    "manifest-v3",
+    "webrtc",
+    "mediarecorder",
+    "ffmpeg"
+  ],
+  "author": "",
+  "license": "MIT"
+}
