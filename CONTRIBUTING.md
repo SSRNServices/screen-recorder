@@ -32,13 +32,23 @@ All contributors and maintainers are expected to uphold a professional, welcomin
    npm install
    ```
 
-### 3. Branch Naming Conventions
+### 3. Branch Strategy
 
-Create a topic branch from `main`:
-* `feat/<feature-name>` for new features (e.g. `feat/audio-ducking`)
-* `fix/<bug-name>` for bug fixes (e.g. `fix/aspect-ratio-clamping`)
-* `docs/<topic>` for documentation improvements
-* `refactor/<module>` for non-breaking code refactoring
+The repository intentionally maintains a single long-lived branch:
+
+* **Primary Branch**: `main` is the only permanent branch in the repository.
+* **Temporary Topic Branches**: When contributing via Pull Request, use a temporary topic branch on your fork:
+  * `feat/<feature-name>` for new features (e.g. `feat/audio-ducking`)
+  * `fix/<bug-name>` for bug fixes (e.g. `fix/aspect-ratio-clamping`)
+  * `docs/<topic>` for documentation improvements
+  * `refactor/<module>` for non-breaking refactoring
+* **Immediate Deletion on Merge**: Once reviewed and merged into `main`, the temporary topic branch is deleted.
+* **No Automated Bot Branches**: Automated dependency-update bots (such as Dependabot) are disabled. All dependency updates are reviewed, audited, and applied manually:
+  ```bash
+  npm outdated
+  npm audit --audit-level=high
+  ```
+* **Release Versioning**: Official releases are marked using semantic Git tags (`v*.*.*`), never permanent release branches.
 
 ### 4. Code Standards & Static Analysis
 

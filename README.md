@@ -275,6 +275,10 @@ Every commit pushed to `main` and all Pull Requests are automatically verified b
 * **Windows Build (`.github/workflows/windows-build.yml`)**: Runs matrix tests on `windows-latest` to validate native path handling and packaging.
 * **Automated Releases (`.github/workflows/release.yml`)**: Tagging a release (`git tag v0.1.0 && git push origin v0.1.0`) triggers an automated build that verifies version parity across `package.json` and `manifest.json`, builds verified zip bundles, calculates cryptographic SHA-256 checksums, and attaches assets to a GitHub Release.
 
+### Branch Strategy
+
+ScreenRecorder maintains a single permanent branch: `main`. Release distributions are delivered via semantic Git tags (`v*.*.*`). Automated dependency-update bots are disabled, ensuring no persistent or unsolicited bot branches exist.
+
 
 ---
 
