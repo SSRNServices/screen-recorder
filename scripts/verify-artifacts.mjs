@@ -63,6 +63,28 @@ for (const relFile of requiredExtensionFiles) {
 }
 console.log(`[PASS] All ${requiredExtensionFiles.length} essential extension assets verified.`);
 
+// Verify background.js is 100% self-contained (no external chunk imports)
+const bgContent = fs.readFileSync(path.join(extensionDistDir, 'background.js'), 'utf8');
+if (/import\s+.*\s+from\s+['"]\.\/assets\//i.test(bgContent) || /import\s*\(/.test(bgContent)) {
+  console.error('[Error] background.js contains external chunk imports. Service worker must be self-contained to prevent fetch errors.');
+  process.exit(1);
+}
+console.log('[PASS] background.js service worker is 100% self-contained (zero chunk imports).');
+
+// Verify HTML files use relative assets and do not use modulepreload
+for (const htmlFile of ['popup.html', 'recorder.html']) {
+  const htmlContent = fs.readFileSync(path.join(extensionDistDir, htmlFile), 'utf8');
+  if (htmlContent.includes('"/assets/') || htmlContent.includes("'/assets/")) {
+    console.error(`[Error] ${htmlFile} contains absolute path /assets/. Must use relative base.`);
+    process.exit(1);
+  }
+  if (htmlContent.includes('rel="modulepreload"')) {
+    console.error(`[Error] ${htmlFile} contains modulepreload links. May trigger CORS/script-fetch errors in extension.`);
+    process.exit(1);
+  }
+}
+console.log('[PASS] HTML entry points use relative assets and clean module loading.');
+
 // 4. Verify Protocol Build Output
 const protocolDist = path.join(rootDir, 'packages', 'protocol', 'dist');
 const protocolIndexJs = path.join(protocolDist, 'index.js');

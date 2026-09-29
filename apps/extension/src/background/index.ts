@@ -1,12 +1,11 @@
 import type { ExtensionMessage, RecordingStatusSnapshot } from '@screenrecorder/protocol';
-import { logger } from '../utils/logger.js';
 
-logger.log('START', { component: 'ServiceWorker' });
+console.log('[ScreenRecorder Service Worker] Initializing...');
 
 // Enable session storage access in all extension contexts (popup, recorder tab)
 if (typeof chrome !== 'undefined' && chrome.storage?.session?.setAccessLevel) {
   chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }).catch((err) => {
-    logger.warn('Failed to set session storage access level', { error: String(err) });
+    console.warn('[ScreenRecorder Service Worker] Failed to set session storage access level:', err);
   });
 }
 
@@ -30,7 +29,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
   if (message.type === 'RECORDING_STATUS_UPDATE') {
     updateBadge(message.snapshot.state);
     chrome.storage.session.set({ recording_snapshot: message.snapshot }).catch((err) => {
-      logger.warn('Failed to store snapshot in session', { error: String(err) });
+      console.warn('[ScreenRecorder Service Worker] Failed to store snapshot in session:', err);
     });
     sendResponse({ ok: true });
     return false;
@@ -40,7 +39,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
     chrome.storage.session.get('recording_snapshot').then((data) => {
       sendResponse(data.recording_snapshot || null);
     }).catch((err) => {
-      logger.error('FAILURE', err, { stage: 'START', note: 'Error retrieving snapshot' });
+      console.error('[ScreenRecorder Service Worker] Error retrieving snapshot:', err);
       sendResponse(null);
     });
     return true; // async sendResponse
@@ -97,5 +96,5 @@ chrome.storage.session.get('recording_snapshot').then((data) => {
     updateBadge(snapshot.state);
   }
 }).catch((err) => {
-  logger.warn('Startup session read error', { error: String(err) });
+  console.warn('[ScreenRecorder Service Worker] Startup session read error:', err);
 });
