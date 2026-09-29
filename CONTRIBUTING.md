@@ -21,11 +21,11 @@ All contributors and maintainers are expected to uphold a professional, welcomin
 
 ### 2. Fork and Setup
 
-1. Fork the repository on GitHub: `https://github.com/SSRNServices/web-recorder`.
+1. Fork the repository on GitHub: `https://github.com/SSRNServices/screen-recorder`.
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/<your-username>/web-recorder.git
-   cd web-recorder
+   git clone https://github.com/<your-username>/screen-recorder.git
+   cd screen-recorder
    ```
 3. Install dependencies across the monorepo workspaces:
    ```bash

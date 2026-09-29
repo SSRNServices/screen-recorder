@@ -10,7 +10,7 @@ Capture your screen, browser tabs, windows, microphone, and system audio entirel
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-success.svg)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
-[![CI](https://github.com/SSRNServices/web-recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/SSRNServices/web-recorder/actions/workflows/ci.yml)
+[![CI](https://github.com/SSRNServices/screen-recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/SSRNServices/screen-recorder/actions/workflows/ci.yml)
 
 [Features](#features) · [Architecture](#architecture) · [Quality Engine](#quality-engine) · [Installation](#installation) · [Development](#development) · [Roadmap](#roadmap)
 
@@ -217,8 +217,8 @@ web-recorder/
 
 1. Clone the repository and install dependencies:
    ```bash
-   git clone https://github.com/SSRNServices/web-recorder.git
-   cd web-recorder
+   git clone https://github.com/SSRNServices/screen-recorder.git
+   cd screen-recorder
    npm install
    ```
 2. Build the extension bundle:

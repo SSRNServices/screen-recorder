@@ -37,7 +37,7 @@ If you discover a potential security vulnerability in ScreenRecorder:
 
 1. **Do NOT open a public GitHub issue** with sensitive exploit details or reproduction steps.
 2. Report the vulnerability privately via **GitHub Security Advisories** on the repository:
-   - Navigate to the **Security** tab of [SSRNServices/web-recorder](https://github.com/SSRNServices/web-recorder).
+   - Navigate to the **Security** tab of [SSRNServices/screen-recorder](https://github.com/SSRNServices/screen-recorder).
    - Click **Report a vulnerability**.
 3. Alternatively, contact the maintainers directly via security email or designated private disclosure channel.
 
