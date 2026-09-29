@@ -6,6 +6,8 @@ import type {
 import { getRecordingStatus, startRecording, sendCommand } from '../services/messageClient.js';
 import { RecordingTimer } from '../recorder/timer.js';
 import { loadSavedSettings, saveSettings, DEFAULT_RECORDING_CONFIG } from '../services/settingsService.js';
+import { classifyCaptureError } from '../utils/errors.js';
+import { logger } from '../utils/logger.js';
 
 const defaultSnapshot: RecordingStatusSnapshot = {
   state: 'IDLE',
@@ -139,34 +141,19 @@ export function useRecordingState() {
       }));
       await startRecording(snapshot.config);
     } catch (err: unknown) {
-      console.error('[ScreenRecorder] Recording startup failed:', err);
-      const errorObj = err as Error & { constraint?: string };
-      console.error('[ScreenRecorder] Startup error details:', {
-        name: errorObj?.name,
-        message: errorObj?.message,
-        constraint: errorObj?.constraint,
+      const classified = classifyCaptureError(err, snapshot.config.source);
+      logger.error('FAILURE', err, {
+        stage: 'START',
         source: snapshot.config.source,
-        captureMethod: snapshot.config.captureMethod
+        classifiedCode: classified.code
       });
 
-      const sourceLabel = snapshot.config.source === 'window' ? 'Window' : snapshot.config.source === 'tab' ? 'Tab' : 'Screen';
-      const errMsg = errorObj?.message || `${sourceLabel} capture failed.`;
-      const isCancelled = errMsg.toLowerCase().includes('cancel');
-
-      let userMsg = errMsg;
-      if (errMsg.includes('object DOMException') || errMsg.includes('Error starting tab capture')) {
-        userMsg = `${sourceLabel} capture failed.`;
-      }
+      const isCancelled = classified.code === 'USER_CANCELLED';
 
       setSnapshot((prev) => ({
         ...prev,
         state: isCancelled ? 'IDLE' : 'ERROR',
-        error: isCancelled
-          ? null
-          : {
-              code: isCancelled ? 'RECORDING_CANCELLED' : 'CAPTURE_FAILED',
-              message: userMsg
-            }
+        error: isCancelled ? null : classified
       }));
     }
   };

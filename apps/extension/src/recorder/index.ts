@@ -1,6 +1,7 @@
 import { RecordingController } from './RecordingController.js';
 import { formatDuration } from '../utils/formatTime.js';
-import type { RecordingConfig, RecordingStatusSnapshot, ExtensionMessage } from '@screenrecorder/protocol';
+import type { RecordingStatusSnapshot, ExtensionMessage } from '@screenrecorder/protocol';
+import { logger } from '../utils/logger.js';
 
 const controller = new RecordingController();
 
@@ -134,7 +135,11 @@ function renderUI(snapshot: RecordingStatusSnapshot) {
   } else if (snapshot.state === 'ERROR' && snapshot.error) {
     const errorBox = document.createElement('div');
     errorBox.className = 'error-alert';
-    errorBox.textContent = snapshot.error.message || 'An error occurred.';
+    errorBox.innerHTML = `
+      <div style="font-weight: 600; margin-bottom: 4px;">Recording Error: ${snapshot.error.code}</div>
+      <div>${snapshot.error.message || 'An error occurred during recording.'}</div>
+      ${snapshot.error.details ? `<div style="font-size: 0.75rem; margin-top: 6px; opacity: 0.85;">${snapshot.error.details}</div>` : ''}
+    `;
     detailsSection.appendChild(errorBox);
   }
 
@@ -147,7 +152,7 @@ controller.subscribe((snapshot) => {
   renderUI(snapshot);
 
   // Sync with background service worker
-  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+  if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
     chrome.runtime.sendMessage({
       type: 'RECORDING_STATUS_UPDATE',
       snapshot
@@ -175,16 +180,28 @@ controller.subscribe((snapshot) => {
   }
 });
 
-// Listen for external commands from popup
-if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+// Clean up tracks when tab is closed or navigated away
+window.addEventListener('beforeunload', () => {
+  controller.cleanup();
+});
+
+// Listen for external commands from popup or background
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
     switch (message.type) {
+      case 'PING':
+        sendResponse({ ok: true, ready: true });
+        break;
       case 'START_RECORDING':
-        controller.startRecording(message.config);
+        controller.startRecording(message.config).catch((err) => {
+          logger.error('FAILURE', err, { stage: 'START' });
+        });
         sendResponse({ ok: true });
         break;
       case 'STOP_RECORDING':
-        controller.stopRecording();
+        controller.stopRecording().catch((err) => {
+          logger.error('FAILURE', err, { stage: 'STOPPING' });
+        });
         sendResponse({ ok: true });
         break;
       case 'PAUSE_RECORDING':
@@ -202,44 +219,17 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       case 'GET_RECORDING_STATUS':
         sendResponse(controller.getSnapshot());
         break;
+      default:
+        sendResponse({ ok: true });
+        break;
     }
     return false;
   });
 }
 
-// Handle auto-start from URL query parameters
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('autostart') === '1') {
-  const fpsParam = urlParams.get('fps');
-  const streamId = urlParams.get('streamId') || undefined;
-  const captureMethod = (urlParams.get('captureMethod') as 'desktop' | 'tab') || undefined;
-  const canAudioParam = urlParams.get('canAudio');
-  const canRequestAudioTrack = canAudioParam === 'true' ? true : canAudioParam === 'false' ? false : undefined;
-  const targetTabIdParam = urlParams.get('targetTabId');
-  const targetTabId = targetTabIdParam ? parseInt(targetTabIdParam, 10) : undefined;
-  const targetTabUrlParam = urlParams.get('targetTabUrl');
-  const targetTabUrl = targetTabUrlParam ? decodeURIComponent(targetTabUrlParam) : undefined;
-
-  const initialConfig: RecordingConfig = {
-    source: (urlParams.get('source') as RecordingConfig['source']) || 'screen',
-    includeMic: urlParams.get('mic') === 'true',
-    includeSystemAudio: urlParams.get('audio') !== 'false',
-    quality: (urlParams.get('quality') as RecordingConfig['quality']) || 'high',
-    fps: fpsParam === '30' ? 30 : fpsParam === '60' ? 60 : 'auto',
-    resolution: (urlParams.get('resolution') as RecordingConfig['resolution']) || 'source',
-    streamId,
-    captureMethod,
-    canRequestAudioTrack,
-    targetTabId,
-    targetTabUrl
-  };
-
-  // Scrub streamId from address bar so capability token is not exposed in UI/history
-  if (streamId && window.history && window.history.replaceState) {
-    const cleanUrl = new URL(window.location.href);
-    cleanUrl.searchParams.delete('streamId');
-    window.history.replaceState({}, document.title, cleanUrl.toString());
-  }
-
-  controller.startRecording(initialConfig);
+// Clean address bar history so no sensitive parameters linger in URL
+if (window.location.search && window.history?.replaceState) {
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.search = '';
+  window.history.replaceState({}, document.title, cleanUrl.toString());
 }

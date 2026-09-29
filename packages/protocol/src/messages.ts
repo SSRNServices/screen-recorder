@@ -70,9 +70,19 @@ export type ErrorCode =
   | 'PROCESSING_FAILED'
   | 'PROCESSING_CANCELLED'
   | 'PERMISSION_DENIED'
+  | 'USER_CANCELLED'
+  | 'STREAM_ID_EXPIRED'
+  | 'STREAM_ID_ALREADY_USED'
+  | 'MEDIA_STREAM_FAILED'
+  | 'NO_LIVE_VIDEO_TRACK'
+  | 'MEDIARECORDER_FAILED'
+  | 'MEDIARECORDER_ERROR'
+  | 'RECORDING_START_TIMEOUT'
+  | 'INVALID_SOURCE'
+  | 'INVALID_TARGET_TAB'
+  | 'AUDIO_CAPTURE_FAILED'
   | 'CAPTURE_FAILED'
   | 'RECORDING_CANCELLED'
-  | 'MEDIARECORDER_ERROR'
   | 'STREAM_ENDED_UNEXPECTEDLY'
   | 'UNKNOWN_ERROR';
 
@@ -128,7 +138,10 @@ export type ExtensionMessage =
   | { type: 'RESUME_RECORDING' }
   | { type: 'GET_RECORDING_STATUS' }
   | { type: 'RECORDING_STATUS_UPDATE'; snapshot: RecordingStatusSnapshot }
-  | { type: 'RESET_RECORDING' };
+  | { type: 'RESET_RECORDING' }
+  | { type: 'PING' }
+  | { type: 'RECORDER_READY' }
+  | { type: 'GET_TAB_STREAM_ID'; targetTabId: number; consumerTabId: number };
 
 /**
  * Native messaging requests sent from Extension -> Native Host.

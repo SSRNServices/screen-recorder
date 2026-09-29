@@ -3,6 +3,7 @@ import type {
   RecordingConfig,
   RecordingStatusSnapshot
 } from '@screenrecorder/protocol';
+import { logger } from '../utils/logger.js';
 
 export async function getRecordingStatus(): Promise<RecordingStatusSnapshot | null> {
   if (typeof chrome === 'undefined' || !chrome.runtime) {
@@ -18,7 +19,7 @@ export async function getRecordingStatus(): Promise<RecordingStatusSnapshot | nu
       }
     }
   } catch (err) {
-    console.warn('[MessageClient] Error reading storage:', err);
+    logger.warn('Error reading storage in getRecordingStatus', { error: String(err) });
   }
 
   // Fallback to querying runtime with timeout
@@ -90,18 +91,56 @@ export function validateTargetTab(tab: chrome.tabs.Tab | undefined): { valid: tr
   return { valid: true, tabId: tab.id, url: tab.url };
 }
 
+/**
+ * Wait until recorder tab is loaded and responds to PING handshake.
+ */
+async function waitForRecorderTabReady(tabId: number, timeoutMs = 6000): Promise<boolean> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const response = await new Promise<{ ready?: boolean } | null>((resolve) => {
+        chrome.tabs.sendMessage(tabId, { type: 'PING' } as ExtensionMessage, (res) => {
+          if (chrome.runtime.lastError) {
+            resolve(null);
+          } else {
+            resolve(res);
+          }
+        });
+      });
+      if (response && response.ready) {
+        return true;
+      }
+    } catch {
+      // Tab not ready yet, continue polling
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+}
+
 export async function startRecording(config: RecordingConfig): Promise<void> {
   if (typeof chrome === 'undefined' || !chrome.tabs) {
     throw new Error('Chrome tabs API is not available.');
   }
 
-  // 1. Identify the current active tab (user context)
-  let activeTab: chrome.tabs.Tab | undefined;
-  try {
-    const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    activeTab = activeTabs[0];
-  } catch (err) {
-    console.warn('[MessageClient] Error querying active tab:', err);
+  const recordingConfig: RecordingConfig = { ...config };
+
+  // 1. If Tab capture, validate the active tab before opening or focusing recorder
+  if (recordingConfig.source === 'tab') {
+    let activeTab: chrome.tabs.Tab | undefined;
+    try {
+      const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      activeTab = activeTabs[0];
+    } catch (err) {
+      logger.warn('Error querying active tab for tab capture', { error: String(err) });
+    }
+
+    const validation = validateTargetTab(activeTab);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+    recordingConfig.targetTabId = validation.tabId;
+    recordingConfig.targetTabUrl = validation.url;
   }
 
   // 2. Locate or create the dedicated recorder tab
@@ -110,119 +149,46 @@ export async function startRecording(config: RecordingConfig): Promise<void> {
     url: chrome.runtime.getURL('recorder.html*')
   });
 
-  if (existingTabs.length > 0 && existingTabs[0].id) {
+  if (existingTabs.length > 0 && typeof existingTabs[0].id === 'number') {
     recorderTab = existingTabs[0];
+    await chrome.tabs.update(recorderTab.id!, { active: true });
   } else {
-    // Create recorder tab in background so current active tab stays active
     recorderTab = await chrome.tabs.create({
       url: chrome.runtime.getURL('recorder.html'),
-      active: false
+      active: true
     });
   }
 
-  let streamId: string | undefined;
-  let captureMethod: 'desktop' | 'tab' = 'desktop';
-  let canRequestAudioTrack = false;
-  let targetTabId: number | undefined;
-  let targetTabUrl: string | undefined;
+  if (!recorderTab.id) {
+    throw new Error('Failed to create or focus recorder tab.');
+  }
 
-  // 3. Acquire capture stream based on specific selected source
-  if (config.source === 'tab') {
-    // Validate target tab strictly
-    const validation = validateTargetTab(activeTab);
-    if (!validation.valid) {
-      throw new Error(validation.error);
-    }
-    targetTabId = validation.tabId;
-    targetTabUrl = validation.url;
+  // 3. Establish communication handshake with recorder tab
+  const isReady = await waitForRecorderTabReady(recorderTab.id);
+  if (!isReady) {
+    throw new Error('Recorder tab failed to initialize ready state within timeout.');
+  }
 
-    if (chrome.tabCapture?.getMediaStreamId) {
-      streamId = await new Promise<string>((resolve, reject) => {
-        chrome.tabCapture.getMediaStreamId(
-          { targetTabId: validation.tabId, consumerTabId: recorderTab.id },
-          (id) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else if (!id) {
-              reject(new Error('Tab capture was cancelled or unavailable.'));
-            } else {
-              resolve(id);
-            }
-          }
-        );
-      });
-      captureMethod = 'tab';
-      canRequestAudioTrack = true;
-    } else {
-      throw new Error('Tab capture API is not available.');
-    }
-  } else {
-    // Screen or Window capture
-    if (!chrome.desktopCapture?.chooseDesktopMedia) {
-      throw new Error('Desktop capture API is not available.');
-    }
-
-    const sources = config.source === 'window' ? ['window'] : ['screen'];
-    if (config.includeSystemAudio) {
-      sources.push('audio');
-    }
-    const cancelMsg = config.source === 'window' ? 'Window capture was cancelled.' : 'Screen capture was cancelled.';
-
-    const result = await new Promise<{ streamId: string; canRequestAudioTrack: boolean }>((resolve, reject) => {
-      // NOTE: Do not pass targetTab here. When targetTab is omitted, the stream capability is granted
-      // to the calling extension. Passing an extension tab without a finalized HTTP URL causes Chromium
-      // to fail with "targetTab.url is not a valid URL".
-      chrome.desktopCapture.chooseDesktopMedia(sources, (id, options) => {
+  // 4. Send START_RECORDING message directly to recorder tab
+  // (NO streamId in URL query string, NO race conditions, direct IPC)
+  await new Promise<void>((resolve, reject) => {
+    chrome.tabs.sendMessage(
+      recorderTab.id!,
+      {
+        type: 'START_RECORDING',
+        config: recordingConfig
+      } as ExtensionMessage,
+      (response) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
-        } else if (!id) {
-          reject(new Error(cancelMsg));
+        } else if (response && response.ok === false) {
+          reject(new Error(response.error || 'Failed to start recording in recorder session.'));
         } else {
-          resolve({
-            streamId: id,
-            canRequestAudioTrack: Boolean(options?.canRequestAudioTrack)
-          });
+          resolve();
         }
-      });
-    });
-
-    streamId = result.streamId;
-    captureMethod = 'desktop';
-    canRequestAudioTrack = result.canRequestAudioTrack;
-  }
-
-  if (!streamId) {
-    const defaultCancel = config.source === 'window'
-      ? 'Window capture was cancelled.'
-      : config.source === 'tab'
-        ? 'Tab capture was cancelled.'
-        : 'Screen capture was cancelled.';
-    throw new Error(defaultCancel);
-  }
-
-  // 4. Update recorder tab with explicit capture parameters
-  const queryParams = new URLSearchParams({
-    autostart: '1',
-    source: config.source,
-    mic: String(config.includeMic),
-    audio: String(config.includeSystemAudio),
-    quality: config.quality || 'high',
-    fps: String(config.fps || 'auto'),
-    resolution: config.resolution || 'source',
-    captureMethod,
-    canAudio: String(canRequestAudioTrack),
-    streamId
+      }
+    );
   });
-
-  if (targetTabId) {
-    queryParams.set('targetTabId', String(targetTabId));
-  }
-  if (targetTabUrl) {
-    queryParams.set('targetTabUrl', encodeURIComponent(targetTabUrl));
-  }
-
-  const recorderUrl = chrome.runtime.getURL(`recorder.html?${queryParams.toString()}`);
-  await chrome.tabs.update(recorderTab.id!, { active: true, url: recorderUrl });
 }
 
 export async function sendCommand(message: ExtensionMessage): Promise<void> {
@@ -230,6 +196,7 @@ export async function sendCommand(message: ExtensionMessage): Promise<void> {
     return;
   }
 
+  // Send to runtime first
   try {
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => resolve(), 2000);
@@ -239,6 +206,20 @@ export async function sendCommand(message: ExtensionMessage): Promise<void> {
       });
     });
   } catch (err) {
-    console.warn('[MessageClient] Failed to send command to runtime:', err);
+    logger.warn('Failed to send command to runtime, attempting direct tabs dispatch', { error: String(err) });
+  }
+
+  // Also dispatch directly to any open recorder tabs
+  if (typeof chrome !== 'undefined' && chrome.tabs) {
+    try {
+      const tabs = await chrome.tabs.query({ url: chrome.runtime.getURL('recorder.html*') });
+      for (const tab of tabs) {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+        }
+      }
+    } catch {
+      // Ignore
+    }
   }
 }
